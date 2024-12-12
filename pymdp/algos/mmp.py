@@ -104,7 +104,8 @@ def run_mmp(
                 if t >= future_cutoff:
                     lnB_future = qs_T[f]
                 else:
-                    future_msg = trans_B[f][:, :, int(policy[t, f])].dot(qs_seq[t + 1][f])
+                    # future_msg = trans_B[f][:, :, int(policy[t, f])].dot(qs_seq[t + 1][f]) #NOTE: Removed
+                    future_msg = trans_B[f][:, :, int(policy[t])].dot(qs_seq[t + 1][f]) #NOTE: Added.
                     lnB_future = spm_log_single(future_msg)
                 
                 # inference

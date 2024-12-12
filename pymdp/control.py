@@ -490,14 +490,17 @@ def get_expected_states(qs, B, policy):
         hidden states expected under the policy at time ``t``
     """
     n_steps = policy.shape[0]
-    n_factors = policy.shape[1]
+    # n_factors = policy.shape[1]
+    n_factors = B.shape[0] #NOTE: Added.
 
     # initialise posterior predictive density as a list of beliefs over time, including current posterior beliefs about hidden states as the first element
     qs_pi = [qs] + [utils.obj_array(n_factors) for t in range(n_steps)]
     
     # get expected states over time
     for t in range(n_steps):
-        for control_factor, action in enumerate(policy[t,:]):
+        for control_factor in range(n_factors): #NOTE: Added
+        # for control_factor, action in enumerate(policy[t,:]):
+            action = policy[t] #NOTE: Added.
             qs_pi[t+1][control_factor] = B[control_factor][:,:,int(action)].dot(qs_pi[t][control_factor])
 
     return qs_pi[1:]
@@ -1047,8 +1050,10 @@ def sample_action(q_pi, policies, num_controls, action_selection="deterministic"
 
     # weight each action according to its integrated posterior probability under all policies at the current timestep
     for pol_idx, policy in enumerate(policies):
-        for factor_i, action_i in enumerate(policy[0, :]):
-            action_marginals[factor_i][action_i] += q_pi[pol_idx]
+        for factor_i in range(num_factors): #NOTE:Added
+        # for factor_i, action_i in enumerate(policy[0, :]):
+            # action_marginals[factor_i][action_i] += q_pi[pol_idx]
+            action_marginals[factor_i][policy[0]] += q_pi[pol_idx]
     
     action_marginals = utils.norm_dist_obj_arr(action_marginals)
 
@@ -1063,7 +1068,8 @@ def sample_action(q_pi, policies, num_controls, action_selection="deterministic"
             p_actions = softmax(log_marginal_f * alpha)
             selected_policy[factor_i] = utils.sample(p_actions)
 
-    return selected_policy
+    # return selected_policy
+    return np.array(selected_policy[0])
 
 def _sample_action_test(q_pi, policies, num_controls, action_selection="deterministic", alpha = 16.0, seed=None):
     """

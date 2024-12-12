@@ -68,6 +68,7 @@ def update_posterior_states_full(
 
     if prev_actions is not None:
         prev_actions = np.stack(prev_actions,0)
+        prev_actions = prev_actions.reshape(prev_actions.shape[0], 1) #NOTE: added
 
     qs_seq_pi = utils.obj_array(len(policies))
     F = np.zeros(len(policies)) # variational free energy of policies

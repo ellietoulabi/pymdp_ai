@@ -75,7 +75,7 @@ class Agent(object):
     ):
 
         ### Constant parameters ###
-
+        
         # policy parameters
         self.policy_len = policy_len
         self.gamma = gamma
@@ -209,7 +209,7 @@ class Agent(object):
             policies = self._construct_policies()
         self.policies = policies
 
-        assert all([len(self.num_controls) == policy.shape[1] for policy in self.policies]), "Number of control states is not consistent with policy dimensionalities"
+        # assert all([len(self.num_controls) == policy.shape[1] for policy in self.policies]), "Number of control states is not consistent with policy dimensionalities"
         
         all_policies = np.vstack(self.policies)
 
