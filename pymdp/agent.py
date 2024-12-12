@@ -36,11 +36,10 @@ class Agent(object):
         B,
         C=None,
         D=None,
-        E=None,
-        H=None,
+        E = None,
         pA=None,
-        pB=None,
-        pD=None,
+        pB = None,
+        pD = None,
         num_controls=None,
         policy_len=1,
         inference_horizon=1,
@@ -60,22 +59,13 @@ class Agent(object):
         factors_to_learn="all",
         lr_pB=1.0,
         lr_pD=1.0,
-        use_BMA=True,
-        policy_sep_prior=False,
-        save_belief_hist=False,
-        A_factor_list=None,
-        B_factor_list=None,
-        sophisticated=False,
-        si_horizon=3,
-        si_policy_prune_threshold=1/16,
-        si_state_prune_threshold=1/16,
-        si_prune_penalty=512,
-        ii_depth=10,
-        ii_threshold=1/16,
+        use_BMA = True,
+        policy_sep_prior = False,
+        save_belief_hist = False
     ):
 
         ### Constant parameters ###
-        
+
         # policy parameters
         self.policy_len = policy_len
         self.gamma = gamma
@@ -93,15 +83,6 @@ class Agent(object):
         self.lr_pB = lr_pB
         self.lr_pD = lr_pD
 
-        # sophisticated inference parameters
-        self.sophisticated = sophisticated
-        if self.sophisticated:
-            assert self.policy_len == 1, "Sophisticated inference only works with policy_len = 1"
-        self.si_horizon = si_horizon
-        self.si_policy_prune_threshold = si_policy_prune_threshold
-        self.si_state_prune_threshold = si_state_prune_threshold
-        self.si_prune_penalty = si_prune_penalty
-
         # Initialise observation model (A matrices)
         if not isinstance(A, np.ndarray):
             raise TypeError(
@@ -110,7 +91,7 @@ class Agent(object):
 
         self.A = utils.to_obj_array(A)
 
-        assert utils.is_normalized(self.A), "A matrix is not normalized (i.e. A[m].sum(axis = 0) must all equal 1.0 for all modalities)"
+        assert utils.is_normalized(self.A), "A matrix is not normalized (i.e. A.sum(axis = 0) must all equal 1.0)"
 
         # Determine number of observation modalities and their respective dimensions
         self.num_obs = [self.A[m].shape[0] for m in range(len(self.A))]
@@ -127,7 +108,7 @@ class Agent(object):
 
         self.B = utils.to_obj_array(B)
 
-        assert utils.is_normalized(self.B), "B matrix is not normalized (i.e. B[f].sum(axis = 0) must all equal 1.0 for all factors)"
+        assert utils.is_normalized(self.B), "B matrix is not normalized (i.e. B.sum(axis = 0) must all equal 1.0)"
 
         # Determine number of hidden state factors and their dimensionalities
         self.num_states = [self.B[f].shape[0] for f in range(len(self.B))]
@@ -138,61 +119,13 @@ class Agent(object):
 
         # If no `num_controls` are given, then this is inferred from the shapes of the input B matrices
         if num_controls == None:
-            self.num_controls = [self.B[f].shape[-1] for f in range(self.num_factors)]
+            self.num_controls = [self.B[f].shape[2] for f in range(self.num_factors)]
         else:
-            inferred_num_controls = [self.B[f].shape[-1] for f in range(self.num_factors)]
-            assert num_controls == inferred_num_controls, "num_controls must be consistent with the shapes of the input B matrices"
             self.num_controls = num_controls
-
-        # checking that `A_factor_list` and `B_factor_list` are consistent with `num_factors`, `num_states`, and lagging dimensions of `A` and `B` tensors
-        self.factorized = False
-        if A_factor_list == None:
-            self.A_factor_list = self.num_modalities * [list(range(self.num_factors))] # defaults to having all modalities depend on all factors
-            for m in range(self.num_modalities):
-                factor_dims = tuple([self.num_states[f] for f in self.A_factor_list[m]])
-                assert self.A[m].shape[1:] == factor_dims, f"Please input an `A_factor_list` whose {m}-th indices pick out the hidden state factors that line up with lagging dimensions of A{m}..." 
-                if self.pA is not None:
-                    assert self.pA[m].shape[1:] == factor_dims, f"Please input an `A_factor_list` whose {m}-th indices pick out the hidden state factors that line up with lagging dimensions of pA{m}..." 
-        else:
-            self.factorized = True
-            for m in range(self.num_modalities):
-                assert max(A_factor_list[m]) <= (self.num_factors - 1), f"Check modality {m} of A_factor_list - must be consistent with `num_states` and `num_factors`..."
-                factor_dims = tuple([self.num_states[f] for f in A_factor_list[m]])
-                assert self.A[m].shape[1:] == factor_dims, f"Check modality {m} of A_factor_list. It must coincide with lagging dimensions of A{m}..." 
-                if self.pA is not None:
-                    assert self.pA[m].shape[1:] == factor_dims, f"Check modality {m} of A_factor_list. It must coincide with lagging dimensions of pA{m}..."
-            self.A_factor_list = A_factor_list
-
-        # generate a list of the modalities that depend on each factor 
-        A_modality_list = []
-        for f in range(self.num_factors):
-            A_modality_list.append( [m for m in range(self.num_modalities) if f in self.A_factor_list[m]] )
-
-        # Store thee `A_factor_list` and the `A_modality_list` in a Markov blanket dictionary
-        self.mb_dict = {
-                        'A_factor_list': self.A_factor_list,
-                        'A_modality_list': A_modality_list
-                        }
-
-        if B_factor_list == None:
-            self.B_factor_list = [[f] for f in range(self.num_factors)] # defaults to having all factors depend only on themselves
-            for f in range(self.num_factors):
-                factor_dims = tuple([self.num_states[f] for f in self.B_factor_list[f]])
-                assert self.B[f].shape[1:-1] == factor_dims, f"Please input a `B_factor_list` whose {f}-th indices pick out the hidden state factors that line up with the all-but-final lagging dimensions of B{f}..." 
-                if self.pB is not None:
-                    assert self.pB[f].shape[1:-1] == factor_dims, f"Please input a `B_factor_list` whose {f}-th indices pick out the hidden state factors that line up with the all-but-final lagging dimensions of pB{f}..." 
-        else:
-            self.factorized = True
-            for f in range(self.num_factors):
-                assert max(B_factor_list[f]) <= (self.num_factors - 1), f"Check factor {f} of B_factor_list - must be consistent with `num_states` and `num_factors`..."
-                factor_dims = tuple([self.num_states[f] for f in B_factor_list[f]])
-                assert self.B[f].shape[1:-1] == factor_dims, f"Check factor {f} of B_factor_list. It must coincide with all-but-final lagging dimensions of B{f}..." 
-                if self.pB is not None:
-                    assert self.pB[f].shape[1:-1] == factor_dims, f"Check factor {f} of B_factor_list. It must coincide with all-but-final lagging dimensions of pB{f}..."
-            self.B_factor_list = B_factor_list
-
+        
         # Users have the option to make only certain factors controllable.
-        # default behaviour is to make all hidden state factors controllable, i.e. `self.num_factors == len(self.num_controls)`
+        # default behaviour is to make all hidden state factors controllable
+        # (i.e. self.num_states == self.num_controls)
         if control_fac_idx == None:
             self.control_fac_idx = [f for f in range(self.num_factors) if self.num_controls[f] > 1]
         else:
@@ -205,15 +138,15 @@ class Agent(object):
 
         # Again, the use can specify a set of possible policies, or
         # all possible combinations of actions and timesteps will be considered
-        if policies is None:
+        if policies == None:
             policies = self._construct_policies()
         self.policies = policies
 
-        # assert all([len(self.num_controls) == policy.shape[1] for policy in self.policies]), "Number of control states is not consistent with policy dimensionalities"
+        # assert all([len(self.num_controls) == policy.shape[1] for policy in self.policies]), "Number of control states is not consistent with policy dimensionalities" #NOTE: changed
         
         all_policies = np.vstack(self.policies)
 
-        assert all([n_c >= max_action for (n_c, max_action) in zip(self.num_controls, list(np.max(all_policies, axis =0)+1))]), "Maximum number of actions is not consistent with `num_controls`"
+        assert all([n_c == max_action for (n_c, max_action) in zip(self.num_controls, list(np.max(all_policies, axis =0)+1))]), "Maximum number of actions is not consistent with `num_controls`"
 
         # Construct prior preferences (uniform if not specified)
 
@@ -250,7 +183,7 @@ class Agent(object):
             else:
                 self.D = self._construct_D_prior()
 
-        assert utils.is_normalized(self.D), "D vector is not normalized (i.e. D[f].sum() must all equal 1.0 for all factors)"
+        assert utils.is_normalized(self.D), "A matrix is not normalized (i.e. A.sum(axis = 0) must all equal 1.0"
 
         # Assigning prior parameters on initial hidden states (pD vectors)
         self.pD = pD
@@ -268,14 +201,6 @@ class Agent(object):
         else:
             self.E = self._construct_E_prior()
         
-        # Construct I for backwards induction (if H specified)
-        if H is not None:
-            self.H = H
-            self.I = control.backwards_induction(H, B, B_factor_list, threshold=ii_threshold, depth=ii_depth)
-        else:
-            self.H = None
-            self.I = None
-
         self.edge_handling_params = {}
         self.edge_handling_params['use_BMA'] = use_BMA # creates a 'D-like' moving prior
         self.edge_handling_params['policy_sep_prior'] = policy_sep_prior # carries forward last timesteps posterior, in a policy-conditioned way
@@ -384,12 +309,6 @@ class Agent(object):
             
         else:
             self.qs = init_qs
-        
-        if self.pA is not None:
-            self.A = utils.norm_dist_obj_arr(self.pA)
-        
-        if self.pB is not None:
-            self.B = utils.norm_dist_obj_arr(self.pB)
 
         return self.qs
 
@@ -404,7 +323,7 @@ class Agent(object):
         curr_timestep: ``int``
             The index in absolute simulation time of the current timestep.
         """
-
+        print("++++", self.action)
         if self.prev_actions is None:
             self.prev_actions = [self.action]
         else:
@@ -470,12 +389,12 @@ class Agent(object):
         
         future_qs_seq = utils.obj_array(len(self.qs))
         for p_idx in range(len(self.qs)):
-            future_qs_seq[p_idx] = self.qs[p_idx][-(self.policy_len+1):] # this grabs only the last `policy_len`+1 beliefs about hidden states, under each policy
+            future_qs_seq[p_idx] = self.qs[p_idx][-(self.policy_len+1):] # this grabs only the last `policy_len`+1 beliefs about hidden states, under each policy #NOTE: Why +1 ?!
 
         return future_qs_seq
 
 
-    def infer_states(self, observation, distr_obs=False):
+    def infer_states(self, observation, distr_obs = False):
         """
         Update approximate posterior over hidden states by solving variational inference problem, given an observation.
 
@@ -484,8 +403,6 @@ class Agent(object):
         observation: ``list`` or ``tuple`` of ints
             The observation input. Each entry ``observation[m]`` stores the index of the discrete
             observation for modality ``m``.
-        distr_obs: ``bool``
-            Whether the observation is a distribution over possible observations, rather than a single observation.
 
         Returns
         ---------
@@ -504,19 +421,16 @@ class Agent(object):
 
         if self.inference_algo == "VANILLA":
             if self.action is not None:
-                empirical_prior = control.get_expected_states_interactions(
-                    self.qs, self.B, self.B_factor_list, self.action.reshape(1, -1) 
+                empirical_prior = control.get_expected_states(
+                    self.qs, self.B, self.action.reshape(1, -1) #type: ignore
                 )[0]
             else:
                 empirical_prior = self.D
-            qs = inference.update_posterior_states_factorized(
-                self.A,
-                observation,
-                self.num_obs,
-                self.num_states,
-                self.mb_dict,
-                empirical_prior,
-                **self.inference_params
+            qs = inference.update_posterior_states(
+            self.A,
+            observation,
+            empirical_prior,
+            **self.inference_params
             )
         elif self.inference_algo == "MMP":
 
@@ -528,11 +442,9 @@ class Agent(object):
                 latest_obs = self.prev_obs
                 latest_actions = self.prev_actions
 
-            qs, F = inference.update_posterior_states_full_factorized(
+            qs, F = inference.update_posterior_states_full(
                 self.A,
-                self.mb_dict,
                 self.B,
-                self.B_factor_list,
                 latest_obs,
                 self.policies, 
                 latest_actions, 
@@ -549,12 +461,12 @@ class Agent(object):
 
         return qs
 
-    def _infer_states_test(self, observation, distr_obs=False):
+    def _infer_states_test(self, observation):
         """
         Test version of ``infer_states()`` that additionally returns intermediate variables of MMP, such as
         the prediction errors and intermediate beliefs from the optimization. Used for benchmarking against SPM outputs.
         """
-        observation = tuple(observation) if not distr_obs else observation
+        observation = tuple(observation)
 
         if not hasattr(self, "qs"):
             self.reset()
@@ -562,15 +474,15 @@ class Agent(object):
         if self.inference_algo == "VANILLA":
             if self.action is not None:
                 empirical_prior = control.get_expected_states(
-                    self.qs, self.B, self.action.reshape(1, -1) 
-                )[0]
+                    self.qs, self.B, self.action.reshape(1, -1) #type: ignore
+                )
             else:
                 empirical_prior = self.D
             qs = inference.update_posterior_states(
-                self.A,
-                observation,
-                empirical_prior,
-                **self.inference_params
+            self.A,
+            observation,
+            empirical_prior,
+            **self.inference_params
             )
         elif self.inference_algo == "MMP":
 
@@ -600,19 +512,14 @@ class Agent(object):
 
         self.qs = qs
 
-        if self.inference_algo == "MMP":
-            return qs, xn, vn
-        else:
-            return qs
-    
+        return qs, xn, vn
+
     def infer_policies(self):
         """
         Perform policy inference by optimizing a posterior (categorical) distribution over policies.
         This distribution is computed as the softmax of ``G * gamma + lnE`` where ``G`` is the negative expected
         free energy of policies, ``gamma`` is a policy precision and ``lnE`` is the (log) prior probability of policies.
         This function returns the posterior over policies as well as the negative expected free energy of each policy.
-        In this version of the function, the expected free energy of policies is computed using known factorized structure 
-        in the model, which speeds up computation (particular the state information gain calculations).
 
         Returns
         ----------
@@ -623,53 +530,30 @@ class Agent(object):
         """
 
         if self.inference_algo == "VANILLA":
-            if self.sophisticated:
-                q_pi, G = control.sophisticated_inference_search(
-                    self.qs, 
-                    self.policies, 
-                    self.A, 
-                    self.B, 
-                    self.C, 
-                    self.A_factor_list, 
-                    self.B_factor_list, 
-                    self.I,
-                    self.si_horizon,
-                    self.si_policy_prune_threshold, 
-                    self.si_state_prune_threshold, 
-                    self.si_prune_penalty,
-                    1.0,
-                    self.inference_params,
-                    n=0
-                )
-            else:
-                q_pi, G = control.update_posterior_policies_factorized(
-                    self.qs,
-                    self.A,
-                    self.B,
-                    self.C,
-                    self.A_factor_list,
-                    self.B_factor_list,
-                    self.policies,
-                    self.use_utility,
-                    self.use_states_info_gain,
-                    self.use_param_info_gain,
-                    self.pA,
-                    self.pB,
-                    E = self.E,
-                    I = self.I,
-                    gamma = self.gamma
-                )
+            q_pi, G = control.update_posterior_policies(
+                self.qs,
+                self.A,
+                self.B,
+                self.C,
+                self.policies,
+                self.use_utility,
+                self.use_states_info_gain,
+                self.use_param_info_gain,
+                self.pA,
+                self.pB,
+                E = self.E,
+                gamma = self.gamma
+            )
         elif self.inference_algo == "MMP":
 
             future_qs_seq = self.get_future_qs()
-
-            q_pi, G = control.update_posterior_policies_full_factorized(
+            import datetime
+            elstart = datetime.datetime.now()
+            q_pi, G = control.update_posterior_policies_full(
                 future_qs_seq,
                 self.A,
                 self.B,
                 self.C,
-                self.A_factor_list,
-                self.B_factor_list,
                 self.policies,
                 self.use_utility,
                 self.use_states_info_gain,
@@ -677,11 +561,12 @@ class Agent(object):
                 self.latest_belief,
                 self.pA,
                 self.pB,
-                F=self.F,
-                E=self.E,
-                I=self.I,
-                gamma=self.gamma
+                F = self.F,
+                E = self.E,
+                gamma = self.gamma
             )
+            elend = datetime.datetime.now()
+            print("Update posterior policies full Duration:", elend-elstart)
 
         if hasattr(self, "q_pi_hist"):
             self.q_pi_hist.append(q_pi)
@@ -698,21 +583,20 @@ class Agent(object):
         This function both sets or cachés the action as an internal variable with the agent and returns it.
         This function also updates time variable (and thus manages consequences of updating the moving reference frame of beliefs)
         using ``self.step_time()``.
-
         
         Returns
         ----------
         action: 1D ``numpy.ndarray``
             Vector containing the indices of the actions for each control factor
         """
-
         if self.sampling_mode == "marginal":
             action = control.sample_action(
                 self.q_pi, self.policies, self.num_controls, action_selection = self.action_selection, alpha = self.alpha
             )
         elif self.sampling_mode == "full":
-            action = control.sample_policy(self.q_pi, self.policies, self.num_controls,
-                                           action_selection=self.action_selection, alpha=self.alpha)
+            action = control.sample_policy(
+                self.q_pi, self.policies, self.num_controls, action_selection = self.action_selection, alpha = self.alpha
+            )
 
         self.action = action
 
@@ -734,11 +618,13 @@ class Agent(object):
         """
 
         if self.sampling_mode == "marginal":
-            action, p_dist = control._sample_action_test(self.q_pi, self.policies, self.num_controls,
-                                                         action_selection=self.action_selection, alpha=self.alpha)
+            action, p_dist = control._sample_action_test(
+                self.q_pi, self.policies, self.num_controls, action_selection = self.action_selection, alpha = self.alpha
+            )
         elif self.sampling_mode == "full":
-            action, p_dist = control._sample_policy_test(self.q_pi, self.policies, self.num_controls,
-                                                         action_selection=self.action_selection, alpha=self.alpha)
+            action, p_dist = control._sample_policy_test(
+                self.q_pi, self.policies, self.num_controls, action_selection = self.action_selection, alpha = self.alpha
+            )
 
         self.action = action
 
@@ -747,37 +633,6 @@ class Agent(object):
         return action, p_dist
 
     def update_A(self, obs):
-        """
-        Update approximate posterior beliefs about Dirichlet parameters that parameterise the observation likelihood or ``A`` array.
-
-        Parameters
-        ----------
-        observation: ``list`` or ``tuple`` of ints
-            The observation input. Each entry ``observation[m]`` stores the index of the discrete
-            observation for modality ``m``.
-
-        Returns
-        -----------
-        qA: ``numpy.ndarray`` of dtype object
-            Posterior Dirichlet parameters over observation model (same shape as ``A``), after having updated it with observations.
-        """
-
-        qA = learning.update_obs_likelihood_dirichlet_factorized(
-            self.pA, 
-            self.A, 
-            obs, 
-            self.qs, 
-            self.A_factor_list,
-            self.lr_pA, 
-            self.modalities_to_learn
-        )
-
-        self.pA = qA # set new prior to posterior
-        self.A = utils.norm_dist_obj_arr(qA) # take expected value of posterior Dirichlet parameters to calculate posterior over A array
-
-        return qA
-
-    def _update_A_old(self, obs):
         """
         Update approximate posterior beliefs about Dirichlet parameters that parameterise the observation likelihood or ``A`` array.
 
@@ -808,37 +663,6 @@ class Agent(object):
         return qA
 
     def update_B(self, qs_prev):
-        """
-        Update posterior beliefs about Dirichlet parameters that parameterise the transition likelihood 
-        
-        Parameters
-        -----------
-        qs_prev: 1D ``numpy.ndarray`` or ``numpy.ndarray`` of dtype object
-            Marginal posterior beliefs over hidden states at previous timepoint.
-    
-        Returns
-        -----------
-        qB: ``numpy.ndarray`` of dtype object
-            Posterior Dirichlet parameters over transition model (same shape as ``B``), after having updated it with state beliefs and actions.
-        """
-
-        qB = learning.update_state_likelihood_dirichlet_interactions(
-            self.pB,
-            self.B,
-            self.action,
-            self.qs,
-            qs_prev,
-            self.B_factor_list,
-            self.lr_pB,
-            self.factors_to_learn
-        )
-
-        self.pB = qB # set new prior to posterior
-        self.B = utils.norm_dist_obj_arr(qB)  # take expected value of posterior Dirichlet parameters to calculate posterior over B array
-
-        return qB
-    
-    def _update_B_old(self, qs_prev):
         """
         Update posterior beliefs about Dirichlet parameters that parameterise the transition likelihood 
         
@@ -924,7 +748,7 @@ class Agent(object):
         method = self.inference_algo
         default_params = None
         if method == "VANILLA":
-            default_params = {"num_iter": 10, "dF": 1.0, "dF_tol": 0.001, "compute_vfe": True}
+            default_params = {"num_iter": 10, "dF": 1.0, "dF_tol": 0.001}
         elif method == "MMP":
             default_params = {"num_iter": 10, "grad_descent": True, "tau": 0.25}
         elif method == "VMP":

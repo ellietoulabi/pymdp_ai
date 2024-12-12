@@ -7,4 +7,3 @@ from . import inference
 from . import learning
 from . import algos
 from . import default_models
-from . import jax
