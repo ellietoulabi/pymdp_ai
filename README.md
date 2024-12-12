@@ -1,4 +1,4 @@
-
+<p> pymdp_ai </p>
 <p align='center'>
   <a href='https://github.com/infer-actively/pymdp'>
     <img src='.github/pymdp_logo_2-removebg.png' />
